@@ -14,6 +14,7 @@ import EnrichmentQueuePage from './pages/EnrichmentQueue/index'
 import KitchenSinkPage from './pages/_Kitchen/index'
 import ApprovalPage from './pages/CampaignManager/Approval'
 import History from './pages/EnrichmentQueue/History'
+import SystemHealthDashboard from './pages/SystemHealth/index'
 import ErrorCenterPage from './pages/ErrorCenter/index'
 import UsersPage from './pages/Admin/Users'
 
@@ -217,11 +218,7 @@ export default function App() {
             path="/system-health"
             element={
               currentUser ? (
-                <PlaceholderPage
-                  title="System Health Dashboard (FE-27)"
-                  description="Real-time monitoring of n8n queues, credit consumption, and scraper source health."
-                  roleRequirement="developer, admin"
-                />
+                <SystemHealthDashboard />
               ) : (
                 <Navigate to="/login" replace />
               )
