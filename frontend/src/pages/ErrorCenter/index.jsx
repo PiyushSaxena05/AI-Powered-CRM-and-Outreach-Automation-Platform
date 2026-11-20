@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Table } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Input'
@@ -7,12 +7,19 @@ import { apiClient } from '../../api/client'
 import { can } from '../../utils/roles'
 
 /**
- * Automation Error Center page (FE-28), part 1: error table and filters.
+ * Automation Error Center page (FE-28).
  *
- *   GET /error_center -> list of error records (admin, developer)
+ * Lists failures reported by n8n workflows and scraper workers so an engineer
+ * can inspect them and replay the ones that are safe to retry.
+ *
+ *   GET  /error_center              -> list of error records (admin, developer)
+ *   POST /error_center/{id}/replay  -> queue a retry; 409 if not replayable
  *
  * Notes for reviewers:
  *  - /error_center is not in contracts/openapi.yaml yet (contract change request pending).
+ *  - The API has no endpoint for resolution notes, so notes live in the page
+ *    state for the current session only.
+ *  - The browser only ever shows the redacted fields the backend returns.
  *  - Mock mode: VITE_USE_MOCKS=true, or the backend being unreachable, serves
  *    the sample records below so the page can be built and demoed offline.
  */
@@ -44,6 +51,12 @@ const KNOWN_CATEGORIES = [
   'permanent_provider_rejection',
 ]
 
+// Dispatch failures: never replay without reconciling with the provider first.
+const SEND_CATEGORIES = new Set(['send_timeout', 'provider_rejection', 'permanent_provider_rejection'])
+
+// Marked "Replay Eligible: No" in the playbook (the send categories above are included).
+const NON_REPLAYABLE_CATEGORIES = new Set([...SEND_CATEGORIES, 'invalid_input', 'source_layout_changed'])
+
 const TABLE_HEADERS = [
   'Workflow',
   'Job ID',
@@ -54,14 +67,29 @@ const TABLE_HEADERS = [
   'Next Retry At',
   'Owner',
   'Status',
+  'Details',
 ]
 
 const PAGE_CSS = `
 .ec-row { border-bottom: 1px solid var(--color-border); }
 .ec-row:last-child { border-bottom: none; }
 .ec-row:hover { background: var(--color-bg-subtle); }
+.ec-row[data-selected="true"] { background: var(--color-primary-light); }
 .ec-td { padding: 12px 16px; vertical-align: middle; white-space: nowrap; }
 .ec-mono { font-family: var(--font-mono); font-size: 12px; }
+.ec-pre {
+  margin: 0; padding: 12px; max-height: 220px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+  background: var(--color-bg-subtle); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); color: var(--color-text-main);
+}
+.ec-notes {
+  width: 100%; min-height: 88px; padding: 8px 12px; resize: vertical;
+  font: inherit; font-size: 14px; color: var(--color-text-main);
+  background: var(--color-bg-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
 `
 
 /* ----------------------------------------------------------------------------
@@ -82,7 +110,7 @@ function formatDateTime(value) {
 
 function categoryLabel(category) {
   if (!category) return '—'
-  const text = String(category).replace(/_/g, ' ')
+  const text = String(category).replace(/_/g, ' ').replace(/\bai\b/gi, 'AI')
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
@@ -90,6 +118,40 @@ function statusVariant(status) {
   if (status === 'resolved') return 'success'
   if (status === 'retrying') return 'info'
   return 'warning'
+}
+
+/** Returns why Replay must be disabled, or null when replaying is allowed. */
+function replayBlockReason(error, canReplay) {
+  if (!canReplay) return 'Your role is not allowed to replay jobs.'
+  if (SEND_CATEGORIES.has(error.category)) {
+    return 'Send errors are never replayed automatically. Check the message status with the provider first.'
+  }
+  if (NON_REPLAYABLE_CATEGORIES.has(error.category) || error.replay_eligible === false) {
+    return 'This error cannot be replayed automatically. Fix the cause first.'
+  }
+  if (error.status === 'retrying') return 'A replay is already in progress for this job.'
+  if (error.status === 'resolved') return 'This error is already resolved.'
+  return null
+}
+
+const NOTES_STORAGE_KEY = 'error_center_notes'
+
+// The API cannot store resolution notes yet, so they are kept for the browser session.
+function readStoredNotes() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(NOTES_STORAGE_KEY) || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredNotes(notes) {
+  try {
+    sessionStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes))
+  } catch {
+    // Storage can be unavailable (private mode); the note then lasts until the page reloads.
+  }
 }
 
 /** Accepts the backend record shape and tolerates missing optional fields. */
@@ -174,9 +236,26 @@ const MOCK_ERRORS = [
   },
 ]
 
+const mockStore = MOCK_ERRORS.map((item) => ({ ...item }))
+
 async function mockList() {
   await sleep(300)
-  return MOCK_ERRORS.map((item) => ({ ...item }))
+  return mockStore.map((item) => ({ ...item }))
+}
+
+async function mockReplay(id) {
+  await sleep(300)
+  const record = mockStore.find((item) => item.id === id)
+  if (!record) throw { status: 404, code: 'NOT_FOUND', message: 'Error record not found' }
+  if (replayBlockReason(normalizeError(record), true)) {
+    throw {
+      status: 409,
+      code: 'NOT_REPLAYABLE',
+      message: 'This error category is not eligible for automated replay. Manual reconciliation required.',
+    }
+  }
+  record.status = 'retrying'
+  return { status: 'replay_queued', error_id: id }
 }
 
 /* ----------------------------------------------------------------------------
@@ -199,15 +278,20 @@ async function fetchErrors() {
   }
 }
 
+async function replayJob(id, usedMock) {
+  if (usedMock) return mockReplay(id)
+  return apiClient(`/error_center/${encodeURIComponent(id)}/replay`, { method: 'POST' })
+}
+
 /* ----------------------------------------------------------------------------
  * Table
  * ------------------------------------------------------------------------- */
 
-export function ErrorTable({ errors = [] }) {
+export function ErrorTable({ errors = [], selectedId = null, onSelect = () => {} }) {
   return (
     <Table headers={TABLE_HEADERS}>
       {errors.map((error) => (
-        <tr key={error.id} className="ec-row">
+        <tr key={error.id} className="ec-row" data-selected={error.id === selectedId}>
           <td className="ec-td">{display(error.workflow)}</td>
           <td className="ec-td ec-mono">{display(error.job_id)}</td>
           <td className="ec-td ec-mono">{display(error.correlation_id)}</td>
@@ -221,9 +305,218 @@ export function ErrorTable({ errors = [] }) {
           <td className="ec-td">
             <Badge variant={statusVariant(error.status)}>{categoryLabel(error.status)}</Badge>
           </td>
+          <td className="ec-td">
+            <Button
+              variant="secondary"
+              style={{ padding: '4px 12px', fontSize: '13px' }}
+              aria-label={`View details for job ${display(error.job_id)}`}
+              onClick={() => onSelect(error.id)}
+            >
+              View
+            </Button>
+          </td>
         </tr>
       ))}
     </Table>
+  )
+}
+
+/* ----------------------------------------------------------------------------
+ * Slide-over detail panel
+ * ------------------------------------------------------------------------- */
+
+function DetailRow({ label, children }) {
+  return (
+    <div style={{ display: 'flex', gap: '12px', padding: '6px 0', fontSize: '14px' }}>
+      <dt style={{ width: '130px', flexShrink: 0, color: 'var(--color-text-muted)' }}>{label}</dt>
+      <dd style={{ margin: 0, wordBreak: 'break-word' }}>{children}</dd>
+    </div>
+  )
+}
+
+function PanelSection({ title, children }) {
+  return (
+    <section style={{ marginTop: '24px' }}>
+      <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+export function ErrorDetailPanel({
+  error = null,
+  isOpen = false,
+  onClose = () => {},
+  onReplay = () => {},
+  isReplaying = false,
+  canReplay = true,
+  feedback = null,
+  savedNote = '',
+  onSaveNote = () => {},
+}) {
+  const panelRef = useRef(null)
+  const [draft, setDraft] = useState(savedNote)
+  const [noteSaved, setNoteSaved] = useState(false)
+  const errorId = error?.id
+
+  useEffect(() => {
+    setDraft(savedNote)
+  }, [errorId, savedNote])
+
+  useEffect(() => {
+    setNoteSaved(false)
+  }, [errorId])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    if (panelRef.current) panelRef.current.focus()
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
+  if (!isOpen || !error) return null
+
+  const blockReason = replayBlockReason(error, canReplay)
+  const payloadText = error.payload_snapshot ? JSON.stringify(error.payload_snapshot, null, 2) : '—'
+
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', zIndex: 999 }}
+      />
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ec-panel-title"
+        tabIndex={-1}
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '520px',
+          maxWidth: '100%',
+          height: '100vh',
+          overflowY: 'auto',
+          backgroundColor: 'var(--color-bg-surface)',
+          boxShadow: 'var(--shadow-lg)',
+          padding: '24px',
+          zIndex: 1000,
+          outline: 'none',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+          <div>
+            <h2 id="ec-panel-title" style={{ fontSize: '18px', fontWeight: 600 }}>
+              {display(error.workflow)}
+            </h2>
+            <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+              Failed at {display(error.failed_step)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close error details"
+            style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '22px', color: 'var(--color-text-muted)' }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <dl style={{ margin: '16px 0 0' }}>
+          <DetailRow label="Job ID"><span className="ec-mono">{display(error.job_id)}</span></DetailRow>
+          <DetailRow label="Correlation ID"><span className="ec-mono">{display(error.correlation_id)}</span></DetailRow>
+          <DetailRow label="Category">{categoryLabel(error.category)}</DetailRow>
+          <DetailRow label="Status">
+            <Badge variant={statusVariant(error.status)}>{categoryLabel(error.status)}</Badge>
+          </DetailRow>
+          <DetailRow label="Retry count">{error.retry_count}</DetailRow>
+          <DetailRow label="Next retry at">{formatDateTime(error.next_retry_at)}</DetailRow>
+          <DetailRow label="Owner">{display(error.owner)}</DetailRow>
+        </dl>
+
+        <PanelSection title="Redacted stack trace">
+          <pre className="ec-pre">{display(error.stack_trace)}</pre>
+        </PanelSection>
+
+        <PanelSection title="Payload snapshot">
+          <pre className="ec-pre">{payloadText}</pre>
+        </PanelSection>
+
+        <PanelSection title="AI-suggested root cause">
+          <p style={{ fontSize: '14px', lineHeight: 1.5 }}>
+            {error.ai_suggestion || 'No AI suggestion is available for this error yet.'}
+          </p>
+        </PanelSection>
+
+        <PanelSection title="Resolution notes">
+          <textarea
+            className="ec-notes"
+            aria-label="Resolution notes"
+            placeholder="What was the cause and how was it fixed?"
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value)
+              setNoteSaved(false)
+            }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginTop: '8px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              Notes are kept in this browser session until the API supports saving them.
+            </span>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                onSaveNote(error.id, draft.trim())
+                setNoteSaved(true)
+              }}
+            >
+              Save note
+            </Button>
+          </div>
+          {noteSaved && (
+            <p role="status" style={{ marginTop: '8px', fontSize: '13px', color: 'var(--color-score-high)' }}>
+              Note saved.
+            </p>
+          )}
+        </PanelSection>
+
+        <PanelSection title="Replay">
+          {feedback && (
+            <div
+              role={feedback.type === 'error' ? 'alert' : 'status'}
+              style={{
+                marginBottom: '12px',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '13px',
+                backgroundColor: feedback.type === 'error' ? 'var(--color-score-low-bg)' : 'var(--color-score-high-bg)',
+                color: feedback.type === 'error' ? 'var(--color-score-low)' : 'var(--color-score-high)',
+              }}
+            >
+              {feedback.message}
+            </div>
+          )}
+          <Button
+            disabled={Boolean(blockReason)}
+            isLoading={isReplaying}
+            title={blockReason || 'Queue this job for another attempt'}
+            onClick={() => onReplay(error)}
+          >
+            Replay Job
+          </Button>
+          {blockReason && (
+            <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '8px' }}>{blockReason}</p>
+          )}
+        </PanelSection>
+      </aside>
+    </>
   )
 }
 
@@ -232,7 +525,9 @@ export function ErrorTable({ errors = [] }) {
  * ------------------------------------------------------------------------- */
 
 export default function ErrorCenterPage({ currentUser }) {
-  const allowed = can(currentUser?.role, 'view_error_center')
+  const role = currentUser?.role
+  const allowed = can(role, 'view_error_center')
+  const canReplay = can(role, 'replay_errors')
 
   const [errors, setErrors] = useState([])
   const [loading, setLoading] = useState(true)
@@ -240,12 +535,18 @@ export default function ErrorCenterPage({ currentUser }) {
   const [usingMock, setUsingMock] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [selectedId, setSelectedId] = useState(null)
+  const [replayingId, setReplayingId] = useState(null)
+  const [feedback, setFeedback] = useState(null)
+  const [notes, setNotes] = useState(readStoredNotes)
+  const usingMockRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
     try {
       const result = await fetchErrors()
+      usingMockRef.current = result.usedMock
       setUsingMock(result.usedMock)
       setErrors(result.items)
     } catch (err) {
@@ -276,7 +577,37 @@ export default function ErrorCenterPage({ currentUser }) {
     [errors, categoryFilter, statusFilter]
   )
 
+  const selectedError = useMemo(() => errors.find((e) => e.id === selectedId) || null, [errors, selectedId])
   const filtersActive = categoryFilter !== 'all' || statusFilter !== 'all'
+
+  const openError = useCallback((id) => {
+    setFeedback(null)
+    setSelectedId(id)
+  }, [])
+
+  const closePanel = useCallback(() => setSelectedId(null), [])
+
+  const handleReplay = useCallback(async (error) => {
+    setReplayingId(error.id)
+    setFeedback(null)
+    try {
+      await replayJob(error.id, usingMockRef.current)
+      setErrors((prev) => prev.map((e) => (e.id === error.id ? { ...e, status: 'retrying' } : e)))
+      setFeedback({ type: 'success', message: `Replay queued for job ${display(error.job_id)}.` })
+    } catch (err) {
+      setFeedback({ type: 'error', message: err?.message || 'The replay could not be queued.' })
+    } finally {
+      setReplayingId(null)
+    }
+  }, [])
+
+  const handleSaveNote = useCallback((id, text) => {
+    setNotes((prev) => {
+      const next = { ...prev, [id]: text }
+      writeStoredNotes(next)
+      return next
+    })
+  }, [])
 
   if (!allowed) {
     return (
@@ -374,8 +705,20 @@ export default function ErrorCenterPage({ currentUser }) {
           }
         />
       ) : (
-        <ErrorTable errors={filtered} />
+        <ErrorTable errors={filtered} selectedId={selectedId} onSelect={openError} />
       )}
+
+      <ErrorDetailPanel
+        error={selectedError}
+        isOpen={Boolean(selectedError)}
+        onClose={closePanel}
+        onReplay={handleReplay}
+        isReplaying={replayingId === selectedError?.id}
+        canReplay={canReplay}
+        feedback={feedback}
+        savedNote={notes[selectedError?.id] || ''}
+        onSaveNote={handleSaveNote}
+      />
     </div>
   )
 }
