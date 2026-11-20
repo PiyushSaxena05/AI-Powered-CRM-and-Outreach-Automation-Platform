@@ -8,6 +8,7 @@ import EnrichmentQueuePage from './pages/EnrichmentQueue/index'
 import KitchenSinkPage from './pages/_Kitchen/index'
 import ApprovalPage from './pages/CampaignManager/Approval'
 import History from './pages/EnrichmentQueue/History'
+import ErrorCenterPage from './pages/ErrorCenter/index'
 
 function PlaceholderPage({ title, description, roleRequirement }) {
   return (
@@ -191,11 +192,7 @@ export default function App() {
             path="/error-center"
             element={
               currentUser ? (
-                <PlaceholderPage
-                  title="Automation Error Center (FE-28)"
-                  description="Inspect failures across workflows, review AI suggested root causes, and replay jobs."
-                  roleRequirement="developer, admin"
-                />
+                <ErrorCenterPage currentUser={currentUser} />
               ) : (
                 <Navigate to="/login" replace />
               )
