@@ -404,3 +404,13 @@ Colors, score bands, and radii are defined in `src/styles/tokens.css`:
 - The **Confirm & Deduct Credits** button is disabled, with a clear `role="alert"` reason, when the estimated cost exceeds the remaining daily or monthly budget, when no records are selected, or when the provider is unsupported. The same guard is repeated inside the click handler.
 - The component makes no API calls itself. The parent should start enrichment only from `onConfirm`; Escape, the X button, the backdrop and Cancel only call `onClose`.
 - Props: `isOpen`, `onClose`, `onConfirm`, `provider`, `selectedRecords` or `selectedCount`, `estimatedCredits`, `remainingDailyCredits`, `remainingMonthlyCredits`.
+
+### FE-30: Admin Users and Roles Management
+- **File**: `src/pages/Admin/Users.jsx`
+- **Route**: `/admin` (wired in `App.jsx`)
+- Admin-only: any other role sees a "403 - No Access" page (uses `can(role, 'manage_users')` from `utils/roles.js`).
+- Table of team members with name, email, role dropdown (`admin`, `researcher`, `campaign_manager`, `developer`), status badge and an active/inactive switch.
+- "Create User" opens a modal form. It validates a required name, a valid email and a unique email.
+- An admin cannot deactivate their own account: their switch is disabled, with a tooltip.
+- Uses local mock data, because `contracts/openapi.yaml` has no `/users` endpoints yet. Replace the handlers with `apiClient` calls once the backend contract exists.
+- Props: `currentUser` (falls back to `auth_user` in localStorage).
