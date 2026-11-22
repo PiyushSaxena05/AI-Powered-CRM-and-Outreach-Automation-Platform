@@ -1,5 +1,7 @@
 import React, { useMemo } from "react";
 
+const providerMetricsAvailable = false;
+
 const campaignData = [
   {
     id: 1,
@@ -38,15 +40,13 @@ const eventStream = [
     eventType: "Bounced",
   },
   {
-    timestamp:    "2026-11-19 11:45",
-    domain:       "hotmail.com",
-    eventType:      "Unsubscribed",
+    timestamp: "2026-11-19 11:45",
+    domain: "hotmail.com",
+    eventType: "Unsubscribed",
   },
 ];
 
 export default function Outcomes() {
-  const providerMetricsAvailable = false;
-
   const summary = useMemo(() => {
     const sent = campaignData.reduce((sum, item) => sum + item.sent, 0);
 
@@ -114,15 +114,7 @@ export default function Outcomes() {
         fontFamily: "Arial, sans-serif",
       }}
     >
-      <h1
-        style={{
-          fontSize: "28px",
-          fontWeight: "700",
-          marginBottom: "8px",
-        }}
-      >
-        Campaign Outcomes Dashboard
-      </h1>
+      <h1>Campaign Outcomes Dashboard</h1>
 
       <p
         style={{
@@ -133,7 +125,24 @@ export default function Outcomes() {
         Review campaign delivery and engagement outcomes.
       </p>
 
+      {!providerMetricsAvailable && (
+        <div
+          style={{
+            marginBottom: "24px",
+            padding: "16px",
+            background: "#fff7ed",
+            border: "1px solid #fdba74",
+            borderRadius: "8px",
+            color: "#9a3412",
+            fontWeight: 600,
+          }}
+        >
+          Metrics pending — provider data unavailable.
+        </div>
+      )}
+
       {/* Summary Cards */}
+
       <div
         style={{
           display: "grid",
@@ -144,31 +153,39 @@ export default function Outcomes() {
       >
         <div style={cardStyle}>
           <h3>Total Sent</h3>
-          <h2>{summary.sent}</h2>
+          <h2>{providerMetricsAvailable ? summary.sent : "--"}</h2>
         </div>
 
         <div style={cardStyle}>
           <h3>Delivered</h3>
-          <h2 style={{ color: "#15803d" }}>{summary.delivered}</h2>
+          <h2>{providerMetricsAvailable ? summary.delivered : "--"}
+          </h2>
         </div>
 
         <div style={cardStyle}>
           <h3>Replied</h3>
-          <h2 style={{ color: "#2563eb" }}>{summary.replied}</h2>
+          <h2 >
+            {providerMetricsAvailable ? summary.replied : "--"}
+          </h2>
         </div>
 
         <div style={cardStyle}>
           <h3>Bounced</h3>
-          <h2 style={{ color: "#dc2626" }}>{summary.bounced}</h2>
+          <h2>
+            {providerMetricsAvailable ? summary.bounced : "--"}
+          </h2>
         </div>
 
         <div style={cardStyle}>
           <h3>Unsubscribed</h3>
-          <h2 style={{ color: "#9333ea" }}>{summary.unsubscribed}</h2>
+          <h2 >
+            {providerMetricsAvailable ? summary.unsubscribed : "--"}
+          </h2>
         </div>
       </div>
 
       {/* Metrics */}
+
       <div
         style={{
           background: "#fff",
@@ -182,28 +199,31 @@ export default function Outcomes() {
 
         {providerMetricsAvailable ? (
           <>
-            <p><strong>Delivery Rate:</strong> {deliveryRate}%</p>
-            <p><strong>Reply Rate:</strong> {replyRate}%</p>
-            <p><strong>Bounce Rate:</strong> {bounceRate}%</p>
-            <p><strong>Unsubscribe Rate:</strong> {unsubscribeRate}%</p>
+            <p>
+              <strong>Delivery Rate:</strong> {deliveryRate}%
+            </p>
+            <p>
+              <strong>Reply Rate:</strong> {replyRate}%
+            </p>
+            <p>
+              <strong>Bounce Rate:</strong> {bounceRate}%
+            </p>
+            <p>
+              <strong>Unsubscribe Rate:</strong> {unsubscribeRate}%
+            </p>
           </>
         ) : (
-          <div
-            style={{
-              marginTop: "12px",
-              padding: "12px",
-              background: "#fff7ed",
-              border: "1px solid #fdba74",
-              borderRadius: "8px",
-              color: "#9a3412",
-            }}
-          >
-            Metrics pending. Provider outcome data is not yet available.
-          </div>
+          <>
+            <p><strong>Delivery Rate:</strong> --</p>
+            <p><strong>Reply Rate:</strong> --</p>
+            <p><strong>Bounce Rate:</strong> --</p>
+            <p><strong>Unsubscribe Rate:</strong> --</p>
+          </>
         )}
       </div>
 
-      {/* Campaign Table */}
+      {/* Campaign Totals Table */}
+
       <div
         style={{
           background: "#fff",
@@ -236,20 +256,25 @@ export default function Outcomes() {
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
                   {item.campaign}
                 </td>
+
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
-                  {item.sent}
+                  {providerMetricsAvailable ? item.sent : "--"}
                 </td>
+
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
-                  {item.delivered}
+                  {providerMetricsAvailable ? item.delivered : "--"}
                 </td>
+
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
-                  {item.replied}
+                  {providerMetricsAvailable ? item.replied : "--"}
                 </td>
+
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
-                  {item.bounced}
+                  {providerMetricsAvailable ? item.bounced : "--"}
                 </td>
+
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
-                  {item.unsubscribed}
+                  {providerMetricsAvailable ? item.unsubscribed : "--"}
                 </td>
               </tr>
             ))}
@@ -258,6 +283,7 @@ export default function Outcomes() {
       </div>
 
       {/* Event Stream */}
+
       <div
         style={{
           background: "#fff",
@@ -268,43 +294,66 @@ export default function Outcomes() {
       >
         <div style={{ padding: "20px" }}>
           <h2>Event Stream</h2>
-          <p style={{ color: "#6b7280" }}>
-            Recent campaign outcome events.
-          </p>
         </div>
 
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-          }}
-        >
-          <thead>
-            <tr style={{ background: "#f9fafb" }}>
-              <th style={{ padding: "9px" }}>Timestamp</th>
-              <th style={{ padding: "9px" }}>Recipient Domain</th>
-              <th style={{ padding: "9px" }}>Event Type</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {eventStream.map((event, index) => (
-              <tr key={index}>
-                <td style={{ padding: "9px", borderTop: "1px solid #eee" }}>
-                  {event.timestamp}
-                </td>
-
-                <td style={{ padding: "9px", borderTop: "1px solid #eee" }}>
-                  {event.domain}
-                </td>
-
-                <td style={{ padding: "9px", borderTop: "1px solid #eee" }}>
-                  {event.eventType}
-                </td>
+        {providerMetricsAvailable ? (
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                <th style={{ padding: "12px" }}>Timestamp</th>
+                <th style={{ padding: "12px" }}>Recipient Domain</th>
+                <th style={{ padding: "12px" }}>Event Type</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody>
+              {eventStream.map((event, index) => (
+                <tr key={index}>
+                  <td
+                    style={{
+                      padding: "12px",
+                      borderTop: "1px solid #eee",
+                    }}
+                  >
+                    {event.timestamp}
+                  </td>
+
+                  <td
+                    style={{
+                      padding: "12px",
+                      borderTop: "1px solid #eee",
+                    }}
+                  >
+                    {event.domain}
+                  </td>
+
+                  <td
+                    style={{
+                      padding: "12px",
+                      borderTop: "1px solid #eee",
+                    }}
+                  >
+                    {event.eventType}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div
+            style={{
+              padding: "20px",
+              color: "#6b7280",
+            }}
+          >
+            Provider event data unavailable.
+          </div>
+        )}
       </div>
     </div>
   );
