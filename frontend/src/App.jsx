@@ -14,50 +14,67 @@ import EnrichmentQueuePage from './pages/EnrichmentQueue/index'
 import KitchenSinkPage from './pages/_Kitchen/index'
 import ApprovalPage from './pages/CampaignManager/Approval'
 import History from './pages/EnrichmentQueue/History'
+
+import Outcomes from './pages/CampaignManager/Outcomes'
+
 import SystemHealthDashboard from './pages/SystemHealth/index'
 import ErrorCenterPage from './pages/ErrorCenter/index'
 import UsersPage from './pages/Admin/Users'
 
+
 function PlaceholderPage({ title, description, roleRequirement }) {
   return (
     <div style={{ padding: '32px' }}>
-      <div
+
+      <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '8px' }}>{title}</h2>
+        <p style={{ color: 'var(--color-text-muted)', marginBottom: '16px' }}>{description}</p>
+
+       {title?.includes('Campaign Manager') && (
+  <div style={{ marginBottom: '16px' }}>
+
+    <a
+      href="/campaigns/approval"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '8px 16px',
+        backgroundColor: 'var(--color-primary)',
+        color: '#ffffff',
+        borderRadius: 'var(--radius-md)',
+        fontWeight: 600,
+        fontSize: '13px',
+        textDecoration: 'none'
+      }}
+    >
+      Open Campaign Approval Screen (FE-23) &rarr;
+    </a>
+
+    <div style={{ marginTop: '12px' }}>
+      <a
+        href="/campaigns/outcomes"
         style={{
-          backgroundColor: 'var(--color-bg-surface)',
-          padding: '32px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          padding: '8px 16px',
+          backgroundColor: '#16a34a',
+          color: '#ffffff',
           borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--color-border)',
+          fontWeight: 600,
+          fontSize: '13px',
+          textDecoration: 'none'
         }}
       >
-        <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '8px' }}>
-          {title}
-        </h2>
-        <p style={{ color: 'var(--color-text-muted)', marginBottom: '16px' }}>
-          {description}
-        </p>
-        {title?.includes('Campaign Manager') && (
-          <div style={{ marginBottom: '16px' }}>
-            <a
-              href="/campaigns/approval"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '8px 16px',
-                backgroundColor: 'var(--color-primary)',
-                color: '#ffffff',
-                borderRadius: 'var(--radius-md)',
-                fontWeight: 600,
-                fontSize: '13px',
-                textDecoration: 'none',
-              }}
-            >
-              Open Campaign Approval Screen (FE-23) &rarr;
-            </a>
-          </div>
-        )}
-        {roleRequirement && (
-          <div style={{ fontSize: '13px', color: 'var(--color-text-light)' }}>
-            Requires role: <code>{roleRequirement}</code>
+        Open Campaign Outcomes Dashboard (FE-25) &rarr;
+      </a>
+    </div>
+
+  </div>
+
+)}
+    {roleRequirement && (
+       <div style={{ fontSize: '13px', color: 'var(--color-text-light)' }}>
+       Requires role: <code>{roleRequirement}</code>
           </div>
         )}
       </div>
@@ -186,6 +203,16 @@ export default function App() {
               )
             }
           />
+          <Route
+            path="/campaigns/outcomes"
+            element={
+             (currentUser || import.meta.env.DEV) ? (
+              <Outcomes />
+               ) : (
+                  <Navigate to="/login" replace />
+               )
+              }
+               />
           <Route
             path="/campaigns"
             element={
