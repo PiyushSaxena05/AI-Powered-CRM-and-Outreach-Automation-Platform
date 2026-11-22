@@ -8,6 +8,7 @@ const campaignData = [
     delivered: 180,
     replied: 35,
     bounced: 20,
+    unsubscribed: 8,
   },
   {
     id: 2,
@@ -16,10 +17,36 @@ const campaignData = [
     delivered: 140,
     replied: 25,
     bounced: 10,
+    unsubscribed: 5,
+  },
+];
+
+const eventStream = [
+  {
+    timestamp: "2026-11-19 10:15",
+    domain: "gmail.com",
+    eventType: "Delivered",
+  },
+  {
+    timestamp: "2026-11-19 10:45",
+    domain: "outlook.com",
+    eventType: "Replied",
+  },
+  {
+    timestamp: "2026-11-19 11:10",
+    domain: "yahoo.com",
+    eventType: "Bounced",
+  },
+  {
+    timestamp:    "2026-11-19 11:45",
+    domain:       "hotmail.com",
+    eventType:      "Unsubscribed",
   },
 ];
 
 export default function Outcomes() {
+  const providerMetricsAvailable = false;
+
   const summary = useMemo(() => {
     const sent = campaignData.reduce((sum, item) => sum + item.sent, 0);
 
@@ -38,11 +65,17 @@ export default function Outcomes() {
       0
     );
 
+    const unsubscribed = campaignData.reduce(
+      (sum, item) => sum + item.unsubscribed,
+      0
+    );
+
     return {
       sent,
       delivered,
       replied,
       bounced,
+      unsubscribed,
     };
   }, []);
 
@@ -61,11 +94,16 @@ export default function Outcomes() {
       ? ((summary.bounced / summary.sent) * 100).toFixed(1)
       : "0.0";
 
+  const unsubscribeRate =
+    summary.sent > 0
+      ? ((summary.unsubscribed / summary.sent) * 100).toFixed(1)
+      : "0.0";
+
   const cardStyle = {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
     borderRadius: "12px",
-    padding: "24px",
+    padding: "20px",
     textAlign: "center",
   };
 
@@ -80,7 +118,7 @@ export default function Outcomes() {
         style={{
           fontSize: "28px",
           fontWeight: "700",
-          marginBottom: "10px",
+          marginBottom: "8px",
         }}
       >
         Campaign Outcomes Dashboard
@@ -92,14 +130,14 @@ export default function Outcomes() {
           marginBottom: "24px",
         }}
       >
-        Review campaign delivery, reply, and bounce performance.
+        Review campaign delivery and engagement outcomes.
       </p>
 
       {/* Summary Cards */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))",
           gap: "16px",
           marginBottom: "24px",
         }}
@@ -111,23 +149,22 @@ export default function Outcomes() {
 
         <div style={cardStyle}>
           <h3>Delivered</h3>
-          <h2 style={{ color: "#15803d" }}>
-            {summary.delivered}
-          </h2>
+          <h2 style={{ color: "#15803d" }}>{summary.delivered}</h2>
         </div>
 
         <div style={cardStyle}>
           <h3>Replied</h3>
-          <h2 style={{ color: "#2563eb" }}>
-            {summary.replied}
-          </h2>
+          <h2 style={{ color: "#2563eb" }}>{summary.replied}</h2>
         </div>
 
         <div style={cardStyle}>
           <h3>Bounced</h3>
-          <h2 style={{ color: "#dc2626" }}>
-            {summary.bounced}
-          </h2>
+          <h2 style={{ color: "#dc2626" }}>{summary.bounced}</h2>
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Unsubscribed</h3>
+          <h2 style={{ color: "#9333ea" }}>{summary.unsubscribed}</h2>
         </div>
       </div>
 
@@ -143,26 +180,37 @@ export default function Outcomes() {
       >
         <h2>Campaign Performance Metrics</h2>
 
-        <p>
-          <strong>Delivery Rate:</strong> {deliveryRate}%
-        </p>
-
-        <p>
-          <strong>Reply Rate:</strong> {replyRate}%
-        </p>
-
-        <p>
-          <strong>Bounce Rate:</strong> {bounceRate}%
-        </p>
+        {providerMetricsAvailable ? (
+          <>
+            <p><strong>Delivery Rate:</strong> {deliveryRate}%</p>
+            <p><strong>Reply Rate:</strong> {replyRate}%</p>
+            <p><strong>Bounce Rate:</strong> {bounceRate}%</p>
+            <p><strong>Unsubscribe Rate:</strong> {unsubscribeRate}%</p>
+          </>
+        ) : (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "12px",
+              background: "#fff7ed",
+              border: "1px solid #fdba74",
+              borderRadius: "8px",
+              color: "#9a3412",
+            }}
+          >
+            Metrics pending. Provider outcome data is not yet available.
+          </div>
+        )}
       </div>
 
-      {/* Table */}
+      {/* Campaign Table */}
       <div
         style={{
           background: "#fff",
           border: "1px solid #e5e7eb",
           borderRadius: "12px",
           overflow: "hidden",
+          marginBottom: "24px",
         }}
       >
         <table
@@ -178,6 +226,7 @@ export default function Outcomes() {
               <th style={{ padding: "12px" }}>Delivered</th>
               <th style={{ padding: "12px" }}>Replied</th>
               <th style={{ padding: "12px" }}>Bounced</th>
+              <th style={{ padding: "12px" }}>Unsubscribed</th>
             </tr>
           </thead>
 
@@ -187,21 +236,70 @@ export default function Outcomes() {
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
                   {item.campaign}
                 </td>
-
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
                   {item.sent}
                 </td>
-
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
                   {item.delivered}
                 </td>
-
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
                   {item.replied}
                 </td>
-
                 <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
                   {item.bounced}
+                </td>
+                <td style={{ padding: "12px", borderTop: "1px solid #eee" }}>
+                  {item.unsubscribed}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Event Stream */}
+      <div
+        style={{
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: "12px",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "20px" }}>
+          <h2>Event Stream</h2>
+          <p style={{ color: "#6b7280" }}>
+            Recent campaign outcome events.
+          </p>
+        </div>
+
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+          }}
+        >
+          <thead>
+            <tr style={{ background: "#f9fafb" }}>
+              <th style={{ padding: "9px" }}>Timestamp</th>
+              <th style={{ padding: "9px" }}>Recipient Domain</th>
+              <th style={{ padding: "9px" }}>Event Type</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {eventStream.map((event, index) => (
+              <tr key={index}>
+                <td style={{ padding: "9px", borderTop: "1px solid #eee" }}>
+                  {event.timestamp}
+                </td>
+
+                <td style={{ padding: "9px", borderTop: "1px solid #eee" }}>
+                  {event.domain}
+                </td>
+
+                <td style={{ padding: "9px", borderTop: "1px solid #eee" }}>
+                  {event.eventType}
                 </td>
               </tr>
             ))}
